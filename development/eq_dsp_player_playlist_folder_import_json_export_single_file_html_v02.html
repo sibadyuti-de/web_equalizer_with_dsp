@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EQ + DSP MP3 Player — Playlist</title>
+  <style>
+    :root {
+      --bg: #0f1220;
+      --panel: #171a2b;
+      --accent: #6aa1ff;
+      --accent-2: #8ef;
+      --text: #eef1ff;
+      --muted: #9aa3b2;
+      --shadow: 0 10px 30px rgba(0, 0, 0, .35);
+      --radius: 16px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; scrollbar-width: thin; }
+    body {
+      margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+      color: var(--text);
+      background: radial-gradient(1200px 800px at 80% -20%, #1c2244 0%, #0f1220 35%, #0b0e18 100%);
+      display: grid; grid-template-rows: auto 1fr auto; height: 100vh; width: 100%; overflow: hidden;
+    }
+    header { padding: 10px clamp(16px, 4vw, 20px); display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+    header h1 { font-size: clamp(18px, 3vw, 24px); margin: 0; letter-spacing: .3px; }
+    .filebar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+    .button, button, input[type="file"]::file-selector-button {
+      appearance: none; background: linear-gradient(180deg, #273056, #1a2142); color: var(--text);
+      border: 1px solid #38406f; border-radius: 12px; padding: 10px 14px; font-weight: 600; cursor: pointer; box-shadow: var(--shadow);
+    }
+    .button.secondary { background: #12162a; border-color: #2b355f; font-weight: 500; }
+    .button.ghost { background: transparent; border-color: #2b355f; box-shadow: none; }
+    .button:disabled { opacity: .5; cursor: not-allowed; }
+
+    main { display: grid; grid-template-columns: 1.1fr .9fr; gap: clamp(14px, 3vw, 20px); padding: clamp(14px, 3vw, 20px); overflow: hidden; }
+    @media (max-width: 1024px) { main { grid-template-columns: 1fr; } }
+
+    .panel { background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(0,0,0,.08)); border: 1px solid #273056; border-radius: var(--radius); box-shadow: var(--shadow); overflow: clip; }
+
+    /* Player */
+    .player { display: grid; grid-template-rows: auto auto auto 1fr; min-height: 0; }
+    .player .meta { display: grid; grid-template-columns: 64px 1fr auto; gap: 16px; align-items: center; padding: 18px 18px 0 18px; }
+    .cover { width: 64px; height: 64px; border-radius: 12px; background: #12162a; display: grid; place-items: center; border: 1px solid #26305b; }
+
+    .visualizer { padding: 10px 18px; }
+    #scope { width: 100%; height: 220px; display: block; border-radius: 12px; background: #0e142a; border: 1px solid #25305a; }
+
+    /* Transport row: play/pause icon left of the range */
+    .transport { display: grid; grid-template-columns: auto 50px 1fr 50px; gap: 12px; align-items: center; padding: 10px 18px 14px 18px; }
+    .transport .iconbtn { width: 40px; height: 40px; border-radius: 10px; display: grid; place-items: center; }
+    .transport .range { width: 100%; }
+    .time { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 600; }
+
+    /* Playlist region (after transport) */
+    .playlist-wrap { display: grid; grid-template-rows: auto 1fr; gap: 8px; padding: 0 18px 18px 18px; min-height: 0; }
+    .playlist-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .playlist { list-style: none; background: #0e142a; border: 1px solid #25305a; border-radius: 12px; overflow: auto; min-height: 120px; max-height: 240px; }
+    .playlist li { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,.04); cursor: pointer; }
+    .playlist li:last-child { border-bottom: none; }
+    .playlist li:hover { background: rgba(138, 184, 255, .06); }
+    .playlist li.active { background: rgba(138, 184, 255, .12); }
+    .badge { font-size: 11px; padding: 4px 8px; border-radius: 999px; background: #1b2448; border: 1px solid #2f3b73; color: var(--accent-2); }
+    .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* Controls panel */
+    .controls { display: grid; grid-template-rows: auto 1fr; }
+    .controls .head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 0 18px; }
+    .grid { padding: 12px 18px 18px; display: grid; gap: 12px; grid-template-columns: repeat(12, 1fr); }
+    .card { grid-column: span 6; background: #0e142a; border: 1px solid #25305a; border-radius: 12px; padding: 12px; }
+    .card h4 { margin-bottom: 8px; }
+    .eqwrap { display: grid; grid-template-columns: repeat(10, 1fr); gap: 10px; }
+    .eqband { display: grid; gap: 6px; place-items: center; }
+    .eqband input[type="range"] { writing-mode: bt-lr; -webkit-appearance: slider-vertical; height: 160px; }
+    .toggles { display: grid; gap: 10px; }
+    .control { display: grid; gap: 6px; }
+
+    footer { padding: 10px 16px; color: var(--muted); text-align: center; border-top: 1px solid #273056; background: rgba(0,0,0,.2); }
+    .kbd { padding: 2px 6px; border: 1px solid #38406f; border-radius: 6px; }
+    input[type="range"] { accent-color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>🎧 Web Audio EQ + DSP Player</h1>
+    <div class="filebar">
+      <!-- single file still supported -->
+      <input id="file" type="file" accept="audio/*" autocomplete="off" />
+      <!-- folder import to build playlist -->
+      <label class="button" title="Import a folder of songs (builds playlist)">
+        Import Folder
+        <input id="folder" type="file" webkitdirectory multiple hidden accept="audio/*" />
+      </label>
+      <button id="exportJson" class="button secondary" title="Export playlist JSON" disabled>Export Playlist JSON</button>
+      <button id="bypass" class="button ghost" title="Bypass all effects (hotkey: B)">Bypass</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel player">
+      <div class="meta">
+        <div class="cover" aria-hidden>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <polygon points="10 8 16 12 10 16 10 8" />
+          </svg>
+        </div>
+        <div>
+          <div class="title" id="title">Load an MP3</div>
+          <div class="subtitle" id="subtitle">Local file • 44.1–48 kHz</div>
+        </div>
+        <div>
+          <select id="preset" class="button secondary" title="EQ Presets">
+            <option value="flat">Preset: Flat</option>
+            <option value="bass">Bass Boost</option>
+            <option value="treble">Treble Boost</option>
+            <option value="vshape">V-Shape</option>
+            <option value="vocal">Vocal Clarity</option>
+            <option value="loudness">Loudness</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="visualizer">
+        <canvas id="scope" height="220"></canvas>
+      </div>
+
+      <div class="transport">
+        <!-- Play/Pause toggle ICON on the LEFT of the range -->
+        <button id="pp" class="button iconbtn" title="Play/Pause (Space)">
+          <svg id="ppIconPlay" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="8 5 19 12 8 19 8 5" /></svg>
+          <svg id="ppIconPause" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+        </button>
+        <span id="cur" class="time">0:00</span>
+        <input id="seek" class="range" type="range" min="0" max="1" step="0.001" value="0" />
+        <span id="dur" class="time">0:00</span>
+      </div>
+
+      <!-- PLAYLIST goes here (using space after transport) -->
+      <div class="playlist-wrap">
+        <div class="playlist-head">
+          <strong>Playlist</strong>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <span id="plistCount" class="badge">0 tracks</span>
+            <button id="clearPl" class="button secondary" disabled>Clear</button>
+          </div>
+        </div>
+        <ul id="playlist" class="playlist" aria-label="Playlist"></ul>
+      </div>
+    </section>
+
+    <section class="panel controls">
+      <div class="head">
+        <strong>Equalizer & Effects</strong>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <label class="button ghost" style="display:flex;gap:8px;align-items:center;">Preamp
+            <input id="preamp" type="range" min="-12" max="12" step="0.1" value="0" style="width:120px;" />
+          </label>
+          <button id="reset" class="button secondary">Reset</button>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card" style="grid-column: 1 / -1;">
+          <h4>10‑Band Graphic EQ (±12 dB)</h4>
+          <div id="eq" class="eqwrap" aria-label="Equalizer Bands"></div>
+        </div>
+
+        <div class="card">
+          <h4>Compressor</h4>
+          <div class="toggles">
+            <div class="control"><label for="comp-enable">Enable</label><input id="comp-enable" type="checkbox" checked></div>
+            <div class="control"><label for="comp-thr">Threshold</label><input id="comp-thr" type="range" min="-100" max="0" step="1" value="-24"></div>
+            <div class="control"><label for="comp-ratio">Ratio</label><input id="comp-ratio" type="range" min="1" max="20" step="1" value="4"></div>
+            <div class="control"><label for="comp-attack">Attack</label><input id="comp-attack" type="range" min="0" max="1" step="0.001" value="0.003"></div>
+            <div class="control"><label for="comp-release">Release</label><input id="comp-release" type="range" min="0" max="1" step="0.001" value="0.25"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4>Reverb</h4>
+          <div class="toggles">
+            <div class="control"><label for="reverb-enable">Enable</label><input id="reverb-enable" type="checkbox"></div>
+            <div class="control"><label for="reverb-mix">Mix</label><input id="reverb-mix" type="range" min="0" max="1" step="0.01" value="0.2"></div>
+            <div class="control"><label for="reverb-decay">Decay (s)</label><input id="reverb-decay" type="range" min="0.1" max="6" step="0.1" value="2.5"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4>Bass & Presence</h4>
+          <div class="toggles">
+            <div class="control"><label for="bass-enable">Bass Shelf</label><input id="bass-enable" type="checkbox"></div>
+            <div class="control"><label for="bass-gain">Gain (dB)</label><input id="bass-gain" type="range" min="-12" max="12" step="0.1" value="6"></div>
+            <div class="control"><label for="presence">Presence (4 kHz)</label><input id="presence" type="range" min="-6" max="6" step="0.1" value="1.5"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4>Utilities</h4>
+          <div class="toggles">
+            <div class="control"><label for="bypass2">Bypass All</label><input id="bypass2" type="checkbox"></div>
+            <div class="control"><label for="balance">L/R Balance</label><input id="balance" type="range" min="-1" max="1" step="0.01" value="0"></div>
+            <div class="control"><label for="trim">Gain Trim (dB)</label><input id="trim" type="range" min="-24" max="12" step="0.1" value="0"></div>
+            <div class="control" style="flex-direction: row; gap: 8px; flex-wrap: wrap;">
+              <button id="savePreset" class="button">Save Preset</button>
+              <button id="loadPreset" class="button secondary">Load Preset</button>
+              <input id="presetFile" type="file" accept="application/json" hidden />
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Drop MP3 anywhere • Hotkeys: <span class="kbd">Space</span> Play/Pause, <span class="kbd">B</span> Bypass, <span class="kbd">R</span> Reset, <span class="kbd">↑/↓</span> Navigate playlist • Made with ♥ By Siba
+  </footer>
+
+  <audio id="audio" crossorigin="anonymous"></audio>
+
+<script>
+// ===== Web Audio setup =====
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+const ctx = new AudioCtx();
+let source = null; // MediaElementSource
+
+const audio = document.getElementById("audio");
+const scope = document.getElementById("scope");
+const c = scope.getContext("2d");
+
+// New Play/Pause in transport
+const ppBtn = document.getElementById("pp");
+const ppIconPlay = document.getElementById("ppIconPlay");
+const ppIconPause = document.getElementById("ppIconPause");
+
+const seek = document.getElementById("seek");
+const cur = document.getElementById("cur");
+const dur = document.getElementById("dur");
+const titleEl = document.getElementById("title");
+const bypassBtn = document.getElementById("bypass");
+
+const presetSel = document.getElementById("preset");
+const preamp = document.getElementById("preamp");
+const resetBtn = document.getElementById("reset");
+
+const compEnable = document.getElementById("comp-enable");
+const compThr = document.getElementById("comp-thr");
+const compRatio = document.getElementById("comp-ratio");
+const compAttack = document.getElementById("comp-attack");
+const compRelease = document.getElementById("comp-release");
+
+const revEnable = document.getElementById("reverb-enable");
+const revMix = document.getElementById("reverb-mix");
+const revDecay = document.getElementById("reverb-decay");
+
+const bassEnable = document.getElementById("bass-enable");
+const bassGain = document.getElementById("bass-gain");
+const presence = document.getElementById("presence");
+
+const bypass2 = document.getElementById("bypass2");
+const balance = document.getElementById("balance");
+const trim = document.getElementById("trim");
+
+const savePresetBtn = document.getElementById("savePreset");
+const loadPresetBtn = document.getElementById("loadPreset");
+const presetFile = document.getElementById("presetFile");
+
+// Playlist UI
+const fileInput = document.getElementById('file');
+const folderInput = document.getElementById('folder');
+const exportJsonBtn = document.getElementById('exportJson');
+const playlistEl = document.getElementById('playlist');
+const plistCount = document.getElementById('plistCount');
+const clearPlBtn = document.getElementById('clearPl');
+
+let playlist = []; // {id, name, url, file, relPath}
+let currentIndex = -1;
+
+// Node graph: media -> preGain -> [10x EQ] -> bass shelf(optional) -> presence peaking -> dynamics -> reverb mix -> balance -> analyser -> out
+const preGain = ctx.createGain();
+const eqBands = [];
+const eqFrequencies = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+const eqMin = -12, eqMax = 12;
+for (let i = 0; i < eqFrequencies.length; i++) {
+  const f = ctx.createBiquadFilter();
+  f.type = 'peaking'; f.frequency.value = eqFrequencies[i]; f.Q.value = 1.0; f.gain.value = 0; eqBands.push(f);
+}
+const bassShelf = ctx.createBiquadFilter(); bassShelf.type = 'lowshelf'; bassShelf.frequency.value = 100; bassShelf.gain.value = 0;
+const presencePeak = ctx.createBiquadFilter(); presencePeak.type = 'peaking'; presencePeak.frequency.value = 4000; presencePeak.Q.value = 1.0; presencePeak.gain.value = 0;
+const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -24; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.25;
+const convolver = ctx.createConvolver(); const reverbGain = ctx.createGain(); const dryGain = ctx.createGain(); reverbGain.gain.value = 0.0; dryGain.gain.value = 1.0;
+function buildImpulse(decaySec = 2.5) { const rate = ctx.sampleRate; const length = Math.max(1, Math.floor(decaySec * rate)); const impulse = ctx.createBuffer(2, length, rate); for (let ch = 0; ch < 2; ch++) { const data = impulse.getChannelData(ch); for (let i = 0; i < length; i++) { const t = i / length; data[i] = (Math.random()*2-1) * Math.pow(1 - t, 3); } } convolver.buffer = impulse; } buildImpulse();
+const splitter = ctx.createChannelSplitter(2); const merger = ctx.createChannelMerger(2); const leftGain = ctx.createGain(); const rightGain = ctx.createGain(); leftGain.gain.value = 1; rightGain.gain.value = 1;
+const trimGain = ctx.createGain(); trimGain.gain.value = 1.0;
+const analyser = ctx.createAnalyser(); analyser.fftSize = 2048; const timeData = new Uint8Array(analyser.fftSize);
+
+function connectGraph(){
+  preGain.disconnect();
+  preGain.connect(eqBands[0]);
+  for (let i=0;i<eqBands.length-1;i++) eqBands[i].connect(eqBands[i+1]);
+  eqBands[eqBands.length-1].connect(bassShelf);
+  bassShelf.connect(presencePeak);
+  presencePeak.connect(dryGain); presencePeak.connect(convolver); convolver.connect(reverbGain);
+  const sumNode = ctx.createGain(); dryGain.connect(sumNode); reverbGain.connect(sumNode);
+  sumNode.connect(splitter); splitter.connect(leftGain,0); splitter.connect(rightGain,1); leftGain.connect(merger,0,0); rightGain.connect(merger,0,1);
+  merger.connect(comp); comp.connect(trimGain); trimGain.connect(analyser); analyser.connect(ctx.destination);
+}
+connectGraph();
+
+// ===== EQ UI =====
+const eqContainer = document.getElementById('eq');
+const bandControls = [];
+EqUI();
+function EqUI(){
+  eqContainer.innerHTML = '';
+  eqFrequencies.forEach((freq, idx) => {
+    const wrap = document.createElement('div'); wrap.className = 'eqband';
+    const slider = document.createElement('input'); slider.type='range'; slider.min=eqMin; slider.max=eqMax; slider.step=0.1; slider.value=0; slider.setAttribute('aria-label', `${freq} Hz`);
+    const label = document.createElement('label'); label.textContent = freq>=1000 ? (freq/1000)+"k" : freq;
+    slider.addEventListener('input', ()=> { eqBands[idx].gain.value = parseFloat(slider.value); });
+    wrap.appendChild(slider); wrap.appendChild(label); eqContainer.appendChild(wrap); bandControls.push(slider);
+  });
+}
+
+// ===== File loading (single) =====
+function loadFile(file){
+  const url = URL.createObjectURL(file);
+  ensureSource();
+  audio.src = url; audio.load(); titleEl.textContent = file.name || 'Unknown Title';
+}
+fileInput.addEventListener('change', (e)=>{ if (e.target.files[0]) { playlist = []; renderPlaylist(); loadFile(e.target.files[0]); currentIndex = -1; exportJsonBtn.disabled = true; } });
+
+// ===== Folder import -> playlist =====
+const AUDIO_EXT = ['.mp3','.mpeg','.wav','.ogg','.m4a','.aac','.flac'];
+folderInput.addEventListener('change', (e)=>{
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  const audioFiles = files.filter(f => AUDIO_EXT.some(ext => f.name.toLowerCase().endsWith(ext)));
+  if (!audioFiles.length) return;
+  // Sort by relative path to keep folder order
+  audioFiles.sort((a,b)=> (a.webkitRelativePath||a.name).localeCompare(b.webkitRelativePath||b.name));
+  // Build playlist
+  playlist = audioFiles.map((file, i)=>({ id: i, name: file.name, file, relPath: file.webkitRelativePath || file.name, url: URL.createObjectURL(file) }));
+  currentIndex = 0;
+  renderPlaylist();
+  exportJsonBtn.disabled = false; clearPlBtn.disabled = false;
+  playIndex(0, {autoplay:true});
+});
+
+function renderPlaylist(){
+  playlistEl.innerHTML = '';
+  plistCount.textContent = `${playlist.length} ${playlist.length===1?'track':'tracks'}`;
+  playlist.forEach((t, idx)=>{
+    const li = document.createElement('li'); li.dataset.index = String(idx);
+    if (idx === currentIndex) li.classList.add('active');
+    li.innerHTML = `
+      <span class="badge" aria-hidden>#${idx+1}</span>
+      <span class="truncate" title="${t.relPath}">${t.name}</span>
+      <span class="time" id="dur-${idx}"></span>
+    `;
+    li.addEventListener('click', ()=> playIndex(idx, {autoplay:true}));
+    playlistEl.appendChild(li);
+    // Lazy duration probe
+    probeDuration(t.url).then(s=>{ const d=document.getElementById(`dur-${idx}`); if(d) d.textContent = fmt(s); }).catch(()=>{});
+  });
+}
+
+async function probeDuration(url){
+  return new Promise((resolve, reject)=>{
+    const a = new Audio(); a.preload='metadata'; a.src = url; a.addEventListener('loadedmetadata', ()=> resolve(a.duration||0)); a.addEventListener('error', reject); });
+}
+
+function playIndex(idx, {autoplay=false}={}){
+  if (idx<0 || idx>=playlist.length) return;
+  currentIndex = idx; const track = playlist[idx];
+  ensureSource();
+  audio.src = track.url; audio.load(); titleEl.textContent = track.name;
+  highlightActive();
+  if (autoplay) { ctx.resume(); audio.play(); updatePP(true); }
+}
+
+function highlightActive(){
+  Array.from(playlistEl.children).forEach((li, i)=>{ li.classList.toggle('active', i===currentIndex); });
+}
+
+clearPlBtn.addEventListener('click', ()=>{ playlist = []; currentIndex = -1; renderPlaylist(); exportJsonBtn.disabled = true; clearPlBtn.disabled = true; });
+
+// Export playlist JSON (relative paths only)
+exportJsonBtn.addEventListener('click', ()=>{
+  if (!playlist.length) return;
+  const root = commonRoot(playlist.map(p=>p.relPath));
+  const data = { root, generatedAt: new Date().toISOString(), tracks: playlist.map(t=>({ title: t.name, path: t.relPath })) };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'playlist.json'; a.click();
+});
+
+function commonRoot(paths){
+  const split = paths.map(p=>p.split('/'));
+  const out = [];
+  for (let i=0;;i++){
+    const seg = split[0][i]; if (!seg) break; if (split.every(arr=>arr[i]===seg)) out.push(seg); else break;
+  }
+  return out.join('/');
+}
+
+// Drag & drop (single file)
+window.addEventListener('dragover', e=>{ e.preventDefault(); });
+window.addEventListener('drop', e=>{ e.preventDefault(); const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) { playlist = []; renderPlaylist(); loadFile(f); currentIndex = -1; exportJsonBtn.disabled = true; } });
+
+// ===== Transport & time =====
+ppBtn.addEventListener('click', async ()=>{ await ctx.resume(); if (audio.paused) { audio.play(); updatePP(true); } else { audio.pause(); updatePP(false); } });
+function updatePP(isPlaying){ ppIconPlay.style.display = isPlaying ? 'none':'block'; ppIconPause.style.display = isPlaying ? 'block':'none'; }
+
+audio.addEventListener('play', ()=> updatePP(true));
+audio.addEventListener('pause', ()=> updatePP(false));
+
+audio.addEventListener('ended', ()=>{ // auto-advance
+  if (currentIndex>=0 && currentIndex<playlist.length-1) playIndex(currentIndex+1, {autoplay:true});
+});
+
+audio.addEventListener('timeupdate', ()=>{ if (audio.duration) { seek.max = audio.duration; seek.value = audio.currentTime; cur.textContent = fmt(audio.currentTime); dur.textContent = fmt(audio.duration); }});
+seek.addEventListener('input', ()=>{ audio.currentTime = seek.value; });
+
+function fmt(sec){ sec = Math.floor(sec||0); const m = Math.floor(sec/60); const s = sec%60; return m+":"+String(s).padStart(2,'0'); }
+
+// ===== Bypass & reset =====
+let bypassed = false;
+function setBypass(state){
+  bypassed = state; if (!source) return;
+  try { source.disconnect(); } catch {}
+  if (bypassed) { source.connect(ctx.destination); bypassBtn.textContent = 'Bypassed'; }
+  else { source.connect(preGain); bypassBtn.textContent = 'Bypass'; }
+}
+bypassBtn.addEventListener('click', ()=> setBypass(!bypassed));
+document.getElementById('bypass2').addEventListener('change', (e)=> setBypass(e.target.checked));
+
+function resetAll(){
+  bandControls.forEach((s,i)=>{ s.value=0; eqBands[i].gain.value=0; });
+  preamp.value = 0; preGain.gain.value = dbToGain(0);
+  trim.value = 0; trimGain.gain.value = dbToGain(0);
+  bassEnable.checked = false; bassShelf.gain.value = 0; bassGain.value = 6;
+  presence.value = 0; presencePeak.gain.value = 0;
+  compEnable.checked = true; comp.threshold.value = -24; compThr.value = -24; comp.ratio.value = 4; compRatio.value = 4; comp.attack.value = 0.003; compAttack.value = 0.003; comp.release.value = 0.25; compRelease.value = 0.25;
+  revEnable.checked = false; reverbGain.gain.value = 0; revMix.value = 0.2; revDecay.value = 2.5; buildImpulse(2.5);
+  balance.value = 0; updateBalance(0);
+  presetSel.value = 'flat';
+}
+resetBtn.addEventListener('click', resetAll);
+
+// ===== Knobs wiring =====
+preamp.addEventListener('input', ()=> preGain.gain.value = dbToGain(parseFloat(preamp.value)) );
+trim.addEventListener('input', ()=> trimGain.gain.value = dbToGain(parseFloat(trim.value)) );
+
+compEnable.addEventListener('change', ()=>{ try{ merger.disconnect(); }catch{}; if (compEnable.checked) { merger.connect(comp); } else { merger.connect(trimGain); } });
+compThr.addEventListener('input', ()=> comp.threshold.value = parseFloat(compThr.value) );
+compRatio.addEventListener('input', ()=> comp.ratio.value = parseFloat(compRatio.value) );
+compAttack.addEventListener('input', ()=> comp.attack.value = parseFloat(compAttack.value) );
+compRelease.addEventListener('input', ()=> comp.release.value = parseFloat(compRelease.value) );
+
+revEnable.addEventListener('change', ()=>{ reverbGain.gain.value = revEnable.checked ? parseFloat(revMix.value) : 0; });
+revMix.addEventListener('input', ()=>{ if (revEnable.checked) reverbGain.gain.value = parseFloat(revMix.value); });
+revDecay.addEventListener('input', ()=> buildImpulse(parseFloat(revDecay.value)) );
+
+bassEnable.addEventListener('change', ()=> bassShelf.gain.value = bassEnable.checked ? parseFloat(bassGain.value) : 0 );
+bassGain.addEventListener('input', ()=>{ if (bassEnable.checked) bassShelf.gain.value = parseFloat(bassGain.value); });
+presence.addEventListener('input', ()=> presencePeak.gain.value = parseFloat(presence.value) );
+
+balance.addEventListener('input', ()=> updateBalance(parseFloat(balance.value)) );
+function updateBalance(val){ const L = clamp(1 - Math.max(0,val), 0, 1); const R = clamp(1 + Math.min(0,val), 0, 1); leftGain.gain.value = L; rightGain.gain.value = R; }
+
+// ===== Presets =====
+const presets = { flat:[0,0,0,0,0,0,0,0,0,0], bass:[6,5,4,2,0,-1,-1,0,1,1], treble:[-2,-2,-1,0,0,1,2,3,4,5], vshape:[4,3,2,1,0,0,0,1,3,4], vocal:[-3,-2,-1,1,2,3,4,2,0,-1], loudness:[4,3,1,0,0,0,1,2,3,4] };
+function applyPreset(key){ const arr = presets[key] || presets.flat; arr.forEach((g,i)=>{ bandControls[i].value = g; eqBands[i].gain.value = g; }); }
+
+document.getElementById('preset').addEventListener('change', ()=> applyPreset(presetSel.value) );
+
+savePresetBtn.addEventListener('click', ()=>{
+  const gains = bandControls.map(s=> parseFloat(s.value));
+  const data = { eq: gains, preamp: parseFloat(preamp.value), trim: parseFloat(trim.value) };
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'eq-preset.json'; a.click();
+});
+loadPresetBtn.addEventListener('click', ()=> presetFile.click());
+presetFile.addEventListener('change', async (e)=>{ const f = e.target.files[0]; if(!f) return; const txt = await f.text(); try { const json = JSON.parse(txt); if (Array.isArray(json.eq) && json.eq.length===10){ json.eq.forEach((g,i)=>{ bandControls[i].value=g; eqBands[i].gain.value=g; }); } if (typeof json.preamp==='number'){ preamp.value=json.preamp; preGain.gain.value = dbToGain(json.preamp); } if (typeof json.trim==='number'){ trim.value=json.trim; trimGain.gain.value = dbToGain(json.trim); } } catch { alert('Invalid preset file'); } });
+
+// ===== Visualizer =====
+function draw(){ requestAnimationFrame(draw); const w = scope.clientWidth, h = scope.clientHeight; if (scope.width!==w) scope.width=w; if (scope.height!==h) scope.height=h; c.clearRect(0,0,w,h); analyser.getByteTimeDomainData(timeData); c.globalAlpha=0.9; c.lineWidth=2; c.beginPath(); for (let i=0;i<timeData.length;i++){ const x=(i/(timeData.length-1))*w; const y=(timeData[i]/255)*h; if (i===0) c.moveTo(x,y); else c.lineTo(x,y);} c.strokeStyle="#8ec9ff"; c.stroke(); const grad=c.createLinearGradient(0,0,0,h); grad.addColorStop(0,'rgba(110, 170, 255, .25)'); grad.addColorStop(1,'rgba(110, 170, 255, 0)'); c.fillStyle=grad; c.fillRect(0,0,w,h); }
+draw();
+
+// ===== Helpers & hotkeys =====
+function dbToGain(db){ return Math.pow(10, db/20); }
+function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+function ensureSource(){ if (!source){ source = ctx.createMediaElementSource(audio); source.connect(preGain); } }
+
+document.addEventListener('keydown', (e)=>{
+  if (e.code === 'Space'){ e.preventDefault(); ppBtn.click(); }
+  if (e.key.toLowerCase()==='b') setBypass(!bypassed);
+  if (e.key.toLowerCase()==='r') resetAll();
+  // Playlist navigation
+  if (playlist.length){
+    if (e.key === 'ArrowDown'){ e.preventDefault(); const next = Math.min((currentIndex<0?0:currentIndex+1), playlist.length-1); playIndex(next, {autoplay:true}); }
+    if (e.key === 'ArrowUp'){ e.preventDefault(); const prev = Math.max((currentIndex<0?0:currentIndex-1), 0); playIndex(prev, {autoplay:true}); }
+  }
+});
+
+// Initialize defaults
+resetAll();
+</script>
+</body>
+</html>

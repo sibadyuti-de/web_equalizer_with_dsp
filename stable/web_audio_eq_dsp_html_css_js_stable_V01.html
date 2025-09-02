@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EQ + DSP MP3 Player</title>
+  <link rel="stylesheet" href="main_style.css">
+</head>
+
+<body>
+  <header>
+    <h1>🎧 Web Audio EQ + DSP Player</h1>
+    <div class="filebar">
+      <input id="file" type="file" accept="audio/mpeg,audio/mp3,audio/*" autocomplete="off"/>
+      <button id="play" class="button" disabled>Play</button>
+      <button id="pause" class="button secondary" disabled>Pause</button>
+      <button id="bypass" class="button ghost" title="Bypass all effects (hotkey: B)">Bypass</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel player">
+      <div class="meta">
+        <div class="cover" aria-hidden>
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <polygon points="10 8 16 12 10 16 10 8" />
+          </svg>
+        </div>
+        <div>
+          <div class="title" id="title">Load an MP3</div>
+          <div class="subtitle" id="subtitle">Local file • 44.1–48 kHz</div>
+        </div>
+        <div>
+          <select id="preset" class="button secondary" title="EQ Presets">
+            <option value="flat">Preset: Flat</option>
+            <option value="bass">Bass Boost</option>
+            <option value="treble">Treble Boost</option>
+            <option value="vshape">V-Shape</option>
+            <option value="vocal">Vocal Clarity</option>
+            <option value="loudness">Loudness</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="visualizer">
+        <canvas id="scope" height="220"></canvas>
+      </div>
+
+      <div class="transport">
+        <span id="cur">0:00</span>
+        <input id="seek" class="range" type="range" min="0" max="1" step="0.001" value="0" />
+        <span id="dur">0:00</span>
+      </div>
+    </section>
+
+    <section class="panel controls">
+      <div class="head">
+        <strong>Equalizer & Effects</strong>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <label class="button ghost" style="display:flex;gap:8px;align-items:center;">
+            Preamp
+            <input id="preamp" type="range" min="-12" max="12" step="0.1" value="0" style="width:120px;" />
+          </label>
+          <button id="reset" class="button secondary">Reset</button>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card" style="grid-column: 1 / -1;">
+          <h4>10‑Band Graphic EQ (±12 dB)</h4>
+          <div id="eq" class="eqwrap" aria-label="Equalizer Bands"></div>
+        </div>
+
+        <div class="card">
+          <h4>Compressor</h4>
+          <div class="toggles">
+            <div class="control">
+              <label for="comp-enable">Enable</label>
+              <input id="comp-enable" type="checkbox" checked>
+            </div>
+
+            <div class="control">
+              <label for="comp-thr">Threshold</label>
+              <input id="comp-thr" type="range" min="-100" max="0" step="1" value="-24">
+            </div>
+
+            <div class="control">
+              <label for="comp-ratio">Ratio</label>
+              <input id="comp-ratio" type="range" min="1" max="20" step="1" value="4">
+            </div>
+
+            <div class="control">
+              <label for="comp-attack">Attack</label>
+              <input id="comp-attack" type="range" min="0" max="1" step="0.001" value="0.003">
+            </div>
+
+            <div class="control">
+              <label for="comp-release">Release</label>
+              <input id="comp-release" type="range" min="0" max="1" step="0.001" value="0.25">
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4>Reverb</h4>
+          <div class="toggles">
+            <div class="control">
+              <label for="reverb-enable">Enable</label>
+              <input id="reverb-enable" type="checkbox">
+            </div>
+
+            <div class="control">
+              <label for="reverb-mix">Mix</label>
+              <input id="reverb-mix" type="range" min="0" max="1" step="0.01" value="0.2">
+            </div>
+
+            <div class="control">
+              <label for="reverb-decay">Decay (s)</label>
+              <input id="reverb-decay" type="range" min="0.1" max="6" step="0.1" value="2.5">
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4>Bass & Presence</h4>
+          <div class="toggles">
+            <div class="control">
+              <label for="bass-enable">Bass Shelf</label>
+              <input id="bass-enable" type="checkbox">
+            </div>
+
+            <div class="control">
+              <label for="bass-gain">Gain (dB)</label>
+              <input id="bass-gain" type="range" min="-12" max="12" step="0.1" value="6">
+            </div>
+
+            <div class="control">
+              <label for="presence">Presence (4 kHz)</label>
+              <input id="presence" type="range" min="-6" max="6" step="0.1" value="1.5">
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h4>Utilities</h4>
+          <div class="toggles">
+            <div class="control">
+              <label for="bypass2">Bypass All</label>
+              <input id="bypass2" type="checkbox">
+            </div>
+
+            <div class="control">
+              <label for="balance">L/R Balance</label>
+              <input id="balance" type="range" min="-1" max="1" step="0.01" value="0">
+            </div>
+
+            <div class="control">
+              <label for="trim">Gain Trim (dB)</label>
+              <input id="trim" type="range" min="-24" max="12" step="0.1" value="0">
+            </div>
+
+            <div class="control" style="flex-direction: row; gap: 8px; flex-wrap: wrap;">
+              <button id="savePreset" class="button">Save Preset</button>
+              <button id="loadPreset" class="button secondary">Load Preset</button>
+              <input id="presetFile" type="file" accept="application/json" hidden />
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    Drag & drop an MP3 anywhere • Hotkeys: <span class="kbd">Space</span> Play/Pause, <span class="kbd">B</span> Bypass,
+    <span class="kbd">R</span> Reset • Made with ♥ By Siba
+  </footer>
+
+  <audio id="audio" crossorigin="anonymous"></audio>
+
+</body>
+<script src="main_script.js"></script>
+</html>
